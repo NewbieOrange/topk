@@ -156,22 +156,20 @@ impl<T: Clone + Eq + Hash> FilteredSpaceSaving<T> {
         Ok(())
     }
 
-    /// Clone internal Top-K items and counters to a new `Vec`.
-    ///
-    /// Computes in **O(K*log(K))** time.
-    pub fn to_vec(&self) -> Vec<(T, ElementCounter)> {
-        let mut copy = self.monitored_list.clone();
-        let mut result = Vec::with_capacity(self.monitored_list.len());
-        while let Some(e) = copy.pop_max() {
-            result.push(e);
-        }
-        result
+    /// Return an iterator in arbitrary order over the Top-K items.
+    pub fn iter(&self) -> impl Iterator<Item=(&T, &ElementCounter)> {
+        self.monitored_list.iter()
     }
 
-    /// Consume the `FilteredSpaceSaving` and return a new `Vec` with Top-K items and counters.
+    /// Consume the `FilteredSpaceSaving` and return an iterator in arbitrary order over the Top-K items.
+    pub fn into_iter(self) -> impl Iterator<Item=(T, ElementCounter)> {
+        self.monitored_list.into_iter()
+    }
+
+    /// Consume the `FilteredSpaceSaving` and return a `Vec` with Top-K items and counters in descending order (top items first).
     ///
     /// Computes in **O(K*log(K))** time.
-    pub fn into_vec(mut self) -> Vec<(T, ElementCounter)> {
+    pub fn into_sorted_vec(mut self) -> Vec<(T, ElementCounter)> {
         let mut result = Vec::with_capacity(self.monitored_list.len());
         while let Some(e) = self.monitored_list.pop_max() {
             result.push(e);
@@ -179,10 +177,10 @@ impl<T: Clone + Eq + Hash> FilteredSpaceSaving<T> {
         result
     }
 
-    /// Consume the `FilteredSpaceSaving` and return a new `DoubleEndedIterator` with Top-K items and counters in descending order.
+    /// Consume the `FilteredSpaceSaving` and return a `DoubleEndedIterator` with Top-K items and counters in descending order (top items first).
     ///
     /// Each consumption computes in **O(log(K))** time.
-    pub fn into_iter(self) -> impl DoubleEndedIterator<Item=(T, ElementCounter)> {
+    pub fn into_sorted_iter(self) -> impl DoubleEndedIterator<Item=(T, ElementCounter)> {
         self.monitored_list.into_sorted_iter().rev()
     }
 
@@ -232,14 +230,14 @@ mod tests {
         fss.insert("3", 2);
         fss.insert("4", 1);
         fss.insert("4", 3);
-        fss.insert("5", 3);
-        let result = fss.into_vec();
+        fss.insert("5", 5);
+        let result = fss.into_sorted_vec();
         assert_eq!(result[0].0, "2");
         assert_eq!(result[0].1, ElementCounter::new(20, 0));
         assert_eq!(result[1].0, "1");
         assert_eq!(result[1].1, ElementCounter::new(10, 0));
-        assert_eq!(result[2].0, "4");
-        assert!(result[2].1.estimated_count + result[2].1.associated_error >= 4);
+        assert_eq!(result[2].0, "5");
+        assert!(result[2].1.estimated_count >= 5);
     }
 
     #[test]
@@ -250,20 +248,20 @@ mod tests {
         fss1.insert("3", 2);
         fss1.insert("4", 1);
         fss1.insert("4", 3);
-        fss1.insert("5", 3);
+        fss1.insert("5", 5);
         let mut fss2 = FilteredSpaceSaving::new(3);
-        fss1.insert("1", 10);
-        fss1.insert("2", 20);
-        fss1.insert("3", 20);
-        fss1.insert("4", 10);
-        fss1.merge(&fss2).unwrap();
-        let result = fss1.into_vec();
+        fss2.insert("1", 10);
+        fss2.insert("2", 20);
+        fss2.insert("3", 20);
+        fss2.insert("4", 10);
+        fss2.merge(&fss1).unwrap();
+        let result = fss2.into_sorted_vec();
         assert_eq!(result[0].0, "2");
         assert_eq!(result[0].1, ElementCounter::new(40, 0));
         assert_eq!(result[1].0, "3");
         assert!(result[1].1.estimated_count + result[1].1.associated_error >= 22);
         assert_eq!(result[2].0, "1");
-        assert_eq!(result[2].1, ElementCounter::new(20, 0));
+        assert_eq!(result[2].1, ElementCounter::new(20, 10));
     }
 
     #[test]
