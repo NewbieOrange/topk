@@ -1,7 +1,7 @@
 /*!
 TopK algorithm implementation in Rust.
 
-This crate currently provides the [Filtered Space-Saving algorithm](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf).
+This crate currently provides the [Filtered Space-Saving algorithm](https://doi.org/10.1016/j.ins.2010.08.024).
 
 ### Usage
 
