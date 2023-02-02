@@ -27,7 +27,7 @@ assert_eq!(topk_result.len(), 3);
 assert_eq!(topk_result[0].0, "1");
 ```
 
-merging space-saving results are supported:
+merging space-saving results is supported:
 
 ```rust
 let mut fss1 = FilteredSpaceSaving::new(3);
@@ -42,7 +42,7 @@ fss1.insert("1", 10);
 fss1.insert("2", 20);
 fss1.insert("3", 20);
 fss1.insert("4", 10);
-fss1.merge( & fss2).unwrap();
+fss1.merge(&fss2).unwrap();
 let result = fss1.into_vec();
 assert_eq!(result[0].0, "2");
 ```

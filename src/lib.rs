@@ -25,7 +25,7 @@ assert_eq!(topk_result.len(), 3);
 assert_eq!(topk_result[0].0, "1");
 ```
 
-merging space-saving results are supported:
+merging space-saving results is supported:
 
 ```rust
 let mut fss1 = FilteredSpaceSaving::new(3);
