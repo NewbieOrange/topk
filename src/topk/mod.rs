@@ -39,20 +39,20 @@ type MonitoredList<T> = DoublePriorityQueue<T, ElementCounter, RandomState>;
 
 /// A filtered space-saving structure containing the current Top-K elements.
 ///
-/// The elements is of type T, which must implement `Clone`, `Eq` and `Hash`.
+/// The elements is of type T, which must implement `Eq` and `Hash`.
 ///
 /// The space-saving algorithm guarantees the following:
 /// 1. `estimated_count` >= `exact_count`
 /// 2. `estimated_count` - `associated_error` <= `exact_count`
 #[derive(Clone)]
-pub struct FilteredSpaceSaving<T: Clone + Eq + Hash> {
+pub struct FilteredSpaceSaving<T: Eq + Hash> {
     k: usize,
     monitored_list: MonitoredList<T>,
     alphas: Vec<u64>,
     count: u64,
 }
 
-impl<T: Clone + Eq + Hash> FilteredSpaceSaving<T> {
+impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     /// Create an empty filtered space-saving structure with pre-allocated space for `k` elements.
     pub fn new(k: usize) -> Self {
         Self {
@@ -115,12 +115,14 @@ impl<T: Clone + Eq + Hash> FilteredSpaceSaving<T> {
 
     /// Merge with `other` filtered space-saving approximation.
     ///
+    /// Require `T` to implement `Clone`.
+    ///
     /// Merging of different `k` values will result in an `InvalidMergeError`.
     ///
     /// ref: <https://ieeexplore.ieee.org/document/8438445>
     ///
     /// Computes in **O(K*log(K))** time.
-    pub fn merge(&mut self, other: &FilteredSpaceSaving<T>) -> Result<(), InvalidMergeError> {
+    pub fn merge(&mut self, other: &FilteredSpaceSaving<T>) -> Result<(), InvalidMergeError> where T: Clone {
         if self.k != other.k {
             return Err(InvalidMergeError {
                 expect: self.k,
