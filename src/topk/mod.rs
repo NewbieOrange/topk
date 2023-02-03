@@ -192,7 +192,7 @@ impl<T: Clone + Eq + Hash> FilteredSpaceSaving<T> {
     }
 
     fn reduce(x: u64, n: u64) -> usize {
-        (x as u32 as u64 * n >> 32) as u32 as usize
+        (x as u128 * n as u128 >> 64) as usize
     }
 
     fn alpha_hash(x: &T, n: usize) -> usize {
