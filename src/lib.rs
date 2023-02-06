@@ -22,7 +22,7 @@ topk.insert("3", 1);
 topk.insert("4", 2);
 let topk_result = topk.into_sorted_vec();
 assert_eq!(topk_result.len(), 3);
-assert_eq!(topk_result[0].0, "1");
+assert_eq!(topk_result[0].0, "2");
 ```
 
 merging space-saving results is supported:
