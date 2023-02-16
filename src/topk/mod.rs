@@ -1,6 +1,6 @@
 use ahash::{AHasher, RandomState};
-use priority_queue::DoublePriorityQueue;
-use std::cmp::Ordering;
+use priority_queue::PriorityQueue;
+use std::cmp::{Ordering, Reverse};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -45,7 +45,7 @@ impl PartialOrd for ElementCounter {
     }
 }
 
-type MonitoredList<T> = DoublePriorityQueue<T, ElementCounter, RandomState>;
+type MonitoredList<T> = PriorityQueue<T, Reverse<ElementCounter>, RandomState>;
 
 /// A filtered space-saving structure containing the current Top-K elements.
 ///
@@ -80,29 +80,29 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         self.count += count;
 
         if self.monitored_list.change_priority_by(&x, |e| {
-            e.estimated_count += count;
+            e.0.estimated_count += count;
         }) {
             return;
         }
         if self.monitored_list.len() < self.k {
-            self.monitored_list.push(x, ElementCounter::new(count, 0));
+            self.monitored_list.push(x, Reverse(ElementCounter::new(count, 0)));
             return;
         }
 
         let x_hash = Self::alpha_hash(&x, self.alphas.len());
-        let (min_elem, min_counter) = self.monitored_list.peek_min().unwrap();
-        if self.alphas[x_hash] + count < min_counter.estimated_count {
+        let (min_elem, min_counter) = self.monitored_list.peek().unwrap();
+        if self.alphas[x_hash] + count < min_counter.0.estimated_count {
             self.alphas[x_hash] += count;
             return;
         }
 
         let m_hash = Self::alpha_hash(min_elem, self.alphas.len());
-        self.alphas[m_hash] = min_counter.estimated_count;
+        self.alphas[m_hash] = min_counter.0.estimated_count;
 
-        self.monitored_list.pop_min();
+        self.monitored_list.pop();
         self.monitored_list.push(
             x,
-            ElementCounter::new(self.alphas[x_hash] + count, self.alphas[x_hash]),
+            Reverse(ElementCounter::new(self.alphas[x_hash] + count, self.alphas[x_hash])),
         );
     }
 
@@ -116,7 +116,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     pub fn estimate(&self, x: &T) -> ElementCounter {
         self.monitored_list
             .get(x)
-            .and_then(|(_, v)| Some(*v))
+            .and_then(|(_, v)| Some(v.0))
             .unwrap_or_else(|| {
                 let count = self.alphas[Self::alpha_hash(&x, self.alphas.len())];
                 ElementCounter::new(count, count)
@@ -142,13 +142,13 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         self.count += other.count;
         for (key, value) in self.monitored_list.iter_mut() {
             if let Some((_, e)) = other.monitored_list.get(key) {
-                value.estimated_count += e.estimated_count;
-                value.associated_error += e.associated_error;
+                value.0.estimated_count += e.0.estimated_count;
+                value.0.associated_error += e.0.associated_error;
             } else {
                 let k_hash = Self::alpha_hash(key, other.alphas.len());
                 let a2 = other.alphas[k_hash];
-                value.estimated_count += a2;
-                value.associated_error += a2;
+                value.0.estimated_count += a2;
+                value.0.associated_error += a2;
             }
         }
         for (key, value) in other.monitored_list.iter() {
@@ -157,10 +157,10 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
             }
             let k_hash = Self::alpha_hash(key, self.alphas.len());
             let a1 = self.alphas[k_hash];
-            let e = ElementCounter::new(value.estimated_count + a1, value.associated_error + a1);
-            if self.monitored_list.peek_min().map_or(true, |(_, m)| m < &e) {
+            let e = Reverse(ElementCounter::new(value.0.estimated_count + a1, value.0.associated_error + a1));
+            if self.monitored_list.peek().map_or(true, |(_, m)| m.0 < e.0) {
                 if self.monitored_list.len() >= self.k {
-                    self.monitored_list.pop_min();
+                    self.monitored_list.pop();
                 }
                 self.monitored_list.push(key.clone(), e);
             }
@@ -173,12 +173,12 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
 
     /// Returns an iterator in arbitrary order over the Top-K items.
     pub fn iter(&self) -> impl Iterator<Item=(&T, &ElementCounter)> {
-        self.monitored_list.iter()
+        self.monitored_list.iter().map(|(k, v)| { (k, &v.0) })
     }
 
     /// Consumes the `FilteredSpaceSaving` and return an iterator in arbitrary order over the Top-K items.
     pub fn into_iter(self) -> impl Iterator<Item=(T, ElementCounter)> {
-        self.monitored_list.into_iter()
+        self.monitored_list.into_iter().map(|(k, v)| { (k, v.0) })
     }
 
     /// Consumes the `FilteredSpaceSaving` and return a `Vec` with Top-K items and counters in descending order (top items first).
@@ -186,17 +186,18 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     /// Computes in **O(K*log(K))** time.
     pub fn into_sorted_vec(mut self) -> Vec<(T, ElementCounter)> {
         let mut result = Vec::with_capacity(self.monitored_list.len());
-        while let Some(e) = self.monitored_list.pop_max() {
-            result.push(e);
+        while let Some((k, v)) = self.monitored_list.pop() {
+            result.push((k, v.0));
         }
+        result.reverse();
         result
     }
 
     /// Consumes the `FilteredSpaceSaving` and return a `DoubleEndedIterator` with Top-K items and counters in descending order (top items first).
     ///
-    /// Each consumption computes in **O(log(K))** time.
+    /// Computes in **O(K*log(K))** time.
     pub fn into_sorted_iter(self) -> impl DoubleEndedIterator<Item=(T, ElementCounter)> {
-        self.monitored_list.into_sorted_iter().rev()
+        self.into_sorted_vec().into_iter()
     }
 
     /// Returns count of all seen items (sum of all inserted `count`).
@@ -269,7 +270,9 @@ mod tests {
         fss2.insert("2", 20);
         fss2.insert("3", 20);
         fss2.insert("4", 10);
+        let total_count = fss1.count + fss2.count;
         fss2.merge(&fss1).unwrap();
+        assert_eq!(fss2.count, total_count);
         let result = fss2.into_sorted_vec();
         assert_eq!(result[0].0, "2");
         assert_eq!(result[0].1, ElementCounter::new(40, 0));
