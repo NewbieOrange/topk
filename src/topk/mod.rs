@@ -158,8 +158,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
             let k_hash = Self::alpha_hash(key, self.alphas.len());
             let a1 = self.alphas[k_hash];
             let e = ElementCounter::new(value.estimated_count + a1, value.associated_error + a1);
-            let (_, min_counter) = self.monitored_list.peek_min().unzip();
-            if min_counter.map_or(true, |m| m < &e) {
+            if self.monitored_list.peek_min().map_or(true, |(_, m)| m < &e) {
                 if self.monitored_list.len() >= self.k {
                     self.monitored_list.pop_min();
                 }
