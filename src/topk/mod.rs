@@ -63,7 +63,7 @@ pub struct FilteredSpaceSaving<T: Eq + Hash> {
 }
 
 impl<T: Eq + Hash> FilteredSpaceSaving<T> {
-    /// Create an empty filtered space-saving structure with pre-allocated space for `k` elements.
+    /// Creates an empty filtered space-saving structure with pre-allocated space for `k` elements.
     pub fn new(k: usize) -> Self {
         Self {
             k,
@@ -73,7 +73,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         }
     }
 
-    /// Insert the item `x` for `count` times.
+    /// Inserts the item `x` for `count` times.
     ///
     /// Computes in **O(log(K))** time.
     pub fn insert(&mut self, x: T, count: u64) {
@@ -106,7 +106,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         );
     }
 
-    /// Estimate the occurrences of the item `x`.
+    /// Estimates the occurrences of the item `x`.
     ///
     /// If the item is in the Top-K approximation, the approximation is returned.
     ///
@@ -123,7 +123,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
             })
     }
 
-    /// Merge with `other` filtered space-saving approximation.
+    /// Merges with `other` filtered space-saving approximation.
     ///
     /// Require `T` to implement `Clone`.
     ///
@@ -168,17 +168,17 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         Ok(())
     }
 
-    /// Return an iterator in arbitrary order over the Top-K items.
+    /// Returns an iterator in arbitrary order over the Top-K items.
     pub fn iter(&self) -> impl Iterator<Item=(&T, &ElementCounter)> {
         self.monitored_list.iter()
     }
 
-    /// Consume the `FilteredSpaceSaving` and return an iterator in arbitrary order over the Top-K items.
+    /// Consumes the `FilteredSpaceSaving` and return an iterator in arbitrary order over the Top-K items.
     pub fn into_iter(self) -> impl Iterator<Item=(T, ElementCounter)> {
         self.monitored_list.into_iter()
     }
 
-    /// Consume the `FilteredSpaceSaving` and return a `Vec` with Top-K items and counters in descending order (top items first).
+    /// Consumes the `FilteredSpaceSaving` and return a `Vec` with Top-K items and counters in descending order (top items first).
     ///
     /// Computes in **O(K*log(K))** time.
     pub fn into_sorted_vec(mut self) -> Vec<(T, ElementCounter)> {
@@ -189,14 +189,14 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         result
     }
 
-    /// Consume the `FilteredSpaceSaving` and return a `DoubleEndedIterator` with Top-K items and counters in descending order (top items first).
+    /// Consumes the `FilteredSpaceSaving` and return a `DoubleEndedIterator` with Top-K items and counters in descending order (top items first).
     ///
     /// Each consumption computes in **O(log(K))** time.
     pub fn into_sorted_iter(self) -> impl DoubleEndedIterator<Item=(T, ElementCounter)> {
         self.monitored_list.into_sorted_iter().rev()
     }
 
-    /// Count of all seen items (sum of all inserted `count`).
+    /// Returns count of all seen items (sum of all inserted `count`).
     ///
     /// Computes in **O(1)** time.
     pub fn count(&self) -> u64 {
