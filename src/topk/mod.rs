@@ -19,6 +19,16 @@ impl ElementCounter {
             associated_error,
         }
     }
+
+    /// Returns the estimated element occurrence count.
+    pub fn estimated_count(&self) -> u64 {
+        self.estimated_count
+    }
+
+    /// Returns the associated occurrence count error.
+    pub fn associated_error(&self) -> u64 {
+        self.associated_error
+    }
 }
 
 impl Ord for ElementCounter {
