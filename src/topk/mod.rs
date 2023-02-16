@@ -141,11 +141,15 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         }
         self.count += other.count;
         for (key, value) in self.monitored_list.iter_mut() {
-            let e2 = other.monitored_list.get(key);
-            let k_hash = Self::alpha_hash(key, self.alphas.len());
-            let a2 = other.alphas[k_hash];
-            value.estimated_count += e2.and_then(|(_, e)| Some(e.estimated_count)).unwrap_or(a2);
-            value.associated_error += e2.and_then(|(_, e)| Some(e.associated_error)).unwrap_or(a2);
+            if let Some((_, e)) = other.monitored_list.get(key) {
+                value.estimated_count += e.estimated_count;
+                value.associated_error += e.associated_error;
+            } else {
+                let k_hash = Self::alpha_hash(key, other.alphas.len());
+                let a2 = other.alphas[k_hash];
+                value.estimated_count += a2;
+                value.associated_error += a2;
+            }
         }
         for (key, value) in other.monitored_list.iter() {
             if self.monitored_list.get(key).is_some() {
