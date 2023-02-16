@@ -4,14 +4,6 @@ TopK algorithm implementation in Rust.
 
 This crate currently provides the [Filtered Space-Saving algorithm](https://doi.org/10.1016/j.ins.2010.08.024).
 
-### Usage
-
-To use this crate, simply add this as dependency in your `Cargo.toml`:
-
-```toml
-topk = "0.2"
-```
-
 Version numbers follow the [semver](https://semver.org/) convention.
 
 ### Example
