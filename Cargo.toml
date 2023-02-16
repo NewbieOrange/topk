@@ -1,6 +1,6 @@
 [package]
 name = "topk"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["NewbieOrange <yutiancheng1999@gmail.com>"]
 description = "TopK algorithm implementation in Rust"
 readme = "README.md"
