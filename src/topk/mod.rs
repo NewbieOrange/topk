@@ -75,13 +75,11 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
 
     /// Inserts the item `x` for `count` times.
     ///
-    /// Computes in **O(log(K))** time.
+    /// Computes in **O(log(k))** time.
     pub fn insert(&mut self, x: T, count: u64) {
         self.count += count;
 
-        if self.monitored_list.change_priority_by(&x, |e| {
-            e.0.estimated_count += count;
-        }) {
+        if self.monitored_list.change_priority_by(&x, |e| e.0.estimated_count += count) {
             return;
         }
         if self.monitored_list.len() < self.k {
@@ -131,7 +129,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     ///
     /// ref: <https://ieeexplore.ieee.org/document/8438445>
     ///
-    /// Computes in **O(K*log(K))** time.
+    /// Computes in **O(k*log(k))** time.
     pub fn merge(&mut self, other: &FilteredSpaceSaving<T>) -> Result<(), InvalidMergeError> where T: Clone {
         if self.k != other.k {
             return Err(InvalidMergeError {
@@ -173,29 +171,27 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
 
     /// Returns an iterator in arbitrary order over the Top-K items.
     pub fn iter(&self) -> impl Iterator<Item=(&T, &ElementCounter)> {
-        self.monitored_list.iter().map(|(k, v)| { (k, &v.0) })
+        self.monitored_list.iter().map(|(k, v)| (k, &v.0))
     }
 
     /// Consumes the `FilteredSpaceSaving` and return an iterator in arbitrary order over the Top-K items.
     pub fn into_iter(self) -> impl Iterator<Item=(T, ElementCounter)> {
-        self.monitored_list.into_iter().map(|(k, v)| { (k, v.0) })
+        self.monitored_list.into_iter().map(|(k, v)| (k, v.0))
     }
 
     /// Consumes the `FilteredSpaceSaving` and return a `Vec` with Top-K items and counters in descending order (top items first).
     ///
-    /// Computes in **O(K*log(K))** time.
-    pub fn into_sorted_vec(mut self) -> Vec<(T, ElementCounter)> {
+    /// Computes in **O(k*log(k))** time.
+    pub fn into_sorted_vec(self) -> Vec<(T, ElementCounter)> {
         let mut result = Vec::with_capacity(self.monitored_list.len());
-        while let Some((k, v)) = self.monitored_list.pop() {
-            result.push((k, v.0));
-        }
+        result.extend(self.monitored_list.into_sorted_iter().map(|(k, v)| (k, v.0)));
         result.reverse();
         result
     }
 
     /// Consumes the `FilteredSpaceSaving` and return a `DoubleEndedIterator` with Top-K items and counters in descending order (top items first).
     ///
-    /// Computes in **O(K*log(K))** time.
+    /// Computes in **O(k*log(k))** time.
     pub fn into_sorted_iter(self) -> impl DoubleEndedIterator<Item=(T, ElementCounter)> {
         self.into_sorted_vec().into_iter()
     }
