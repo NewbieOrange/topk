@@ -210,7 +210,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     pub fn clear(&mut self) {
         self.monitored_list.clear();
         self.alphas.clear();
-        self.alphas.resize(ALPHAS_FACTOR * self.k, 0);
+        self.alphas.resize(self.alphas.capacity(), 0);
         self.count = 0;
     }
 
