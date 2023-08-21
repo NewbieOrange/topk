@@ -47,6 +47,8 @@ impl PartialOrd for ElementCounter {
 
 type MonitoredList<T> = PriorityQueue<T, Reverse<ElementCounter>, RandomState>;
 
+const ALPHAS_FACTOR: usize = 6;
+
 /// A filtered space-saving structure containing the current Top-K elements.
 ///
 /// The elements is of type T, which must implement `Eq` and `Hash`.
@@ -68,7 +70,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         Self {
             k,
             monitored_list: MonitoredList::with_capacity_and_default_hasher(k),
-            alphas: vec![0; 6 * k],
+            alphas: vec![0; ALPHAS_FACTOR * k],
             count: 0,
         }
     }
@@ -203,6 +205,15 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         self.count
     }
 
+    /// Clears the counter, resetting count to 0.
+    /// Notes that this method has no effect on the `k` of the counter.
+    pub fn clear(&mut self) {
+        self.monitored_list.clear();
+        self.alphas.clear();
+        self.alphas.resize(ALPHAS_FACTOR * self.k, 0);
+        self.count = 0;
+    }
+
     fn reduce(x: u64, n: u64) -> usize {
         (x as u128 * n as u128 >> 64) as usize
     }
@@ -285,5 +296,23 @@ mod tests {
         let mut fss2 = FilteredSpaceSaving::new(2);
         fss2.insert(0, 0);
         assert!(fss1.merge(&fss2).is_err());
+    }
+
+    #[test]
+    fn test_clear() {
+        let mut fss = FilteredSpaceSaving::new(3);
+        fss.insert("1", 10);
+        fss.insert("2", 20);
+        fss.insert("3", 2);
+        fss.insert("4", 1);
+        fss.insert("4", 3);
+        fss.insert("5", 5);
+        fss.clear();
+        assert_eq!(fss.k, 3);
+        assert_eq!(fss.count, 0);
+        for x in fss.alphas {
+            assert_eq!(x, 0);
+        }
+        assert!(fss.monitored_list.is_empty());
     }
 }
