@@ -123,6 +123,14 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
             })
     }
 
+    /// Estimates the occurrences of the item `x` if the item is in the Top-K approximation.
+    /// Otherwise, `None` is returned
+    ///
+    /// Computes in **O(1)** time.
+    pub fn get(&self, x: &T) -> Option<ElementCounter> {
+        self.monitored_list.get(x).map_or(None, |(_, v)| Some(v.0))
+    }
+
     /// Merges with `other` filtered space-saving approximation.
     ///
     /// Require `T` to implement `Clone`.
@@ -173,7 +181,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
 
     /// Decays the counters, equivalent to multiplying all counters by the factor.
     ///
-    /// Computes in **O(1)** time.
+    /// Computes in **O(k)** time.
     pub fn decay(&mut self, factor: f64) {
         for (_, value) in self.monitored_list.iter_mut() {
             value.0.estimated_count = (value.0.estimated_count as f64 * factor) as u64;
