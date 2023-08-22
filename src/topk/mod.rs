@@ -171,6 +171,18 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         Ok(())
     }
 
+    /// Decays the counters, equivalent to multiplying all counters by the factor.
+    ///
+    /// Computes in **O(1)** time.
+    pub fn decay(&mut self, factor: f64) {
+        for (_, value) in self.monitored_list.iter_mut() {
+            value.0.estimated_count = (value.0.estimated_count as f64 * factor) as u64;
+            value.0.associated_error = (value.0.associated_error as f64 * factor) as u64;
+        }
+        self.alphas.iter_mut().for_each(|x| *x = (*x as f64 * factor) as u64);
+        self.count = (self.count as f64 * factor) as u64
+    }
+
     /// Returns an iterator in arbitrary order over the Top-K items.
     pub fn iter(&self) -> impl Iterator<Item=(&T, &ElementCounter)> {
         self.monitored_list.iter().map(|(k, v)| (k, &v.0))
@@ -198,11 +210,26 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         self.into_sorted_vec().into_iter()
     }
 
+    /// Returns a sorted vector of all items (does not consume the FSS)
+    ///
+    /// Computes in **O(k*log(k))** time.
+    pub fn sorted_items_vec(&self) -> Vec<(&T, &ElementCounter)> {
+        let mut result = Vec::with_capacity(self.monitored_list.len());
+        result.extend(self.monitored_list.iter().map(|(k, v)| (k, &v.0)));
+        result.sort_by(|a, b| b.1.cmp(&a.1));
+        result
+    }
+
     /// Returns count of all seen items (sum of all inserted `count`).
     ///
     /// Computes in **O(1)** time.
     pub fn count(&self) -> u64 {
         self.count
+    }
+
+    /// Returns the `k` value configured fot the FSS
+    pub fn k(&self) -> usize {
+        self.k
     }
 
     /// Clears the counter, resetting count to 0.
@@ -313,5 +340,32 @@ mod tests {
             assert_eq!(x, 0);
         }
         assert!(fss.monitored_list.is_empty());
+    }
+
+    fn topk_of<'a>(fss: &'a FilteredSpaceSaving<&str>) -> Vec<(&'a str, u64)> {
+        fss.sorted_items_vec().iter().map(|(&name, &counter)| (name, counter.estimated_count())).collect::<Vec<_>>()
+    }
+
+    #[test]
+    fn test_decay() {
+        let mut fss = FilteredSpaceSaving::new(3);
+        fss.insert("a", 10);
+        fss.insert("b", 20);
+        fss.insert("c", 6);
+        fss.insert("d", 8);
+        fss.insert("a", 2);
+
+        assert_eq!(fss.count(), 46);
+        assert_eq!(topk_of(&fss), vec![("b", 20), ("a", 12), ("d", 8)]);
+
+        fss.decay(0.5);
+        assert_eq!(fss.count(), 23);
+        assert_eq!(topk_of(&fss), vec![("b", 10), ("a", 6), ("d", 4)]);
+
+        // make sure we did not lose the alphas of items outside of the top-k
+        assert_eq!(fss.estimate(&"c").estimated_count(), 3);
+        fss.insert("c", 2);
+        assert_eq!(fss.estimate(&"c").estimated_count(), 5);
+        assert_eq!(topk_of(&fss), vec![("b", 10), ("a", 6), ("c", 5)]);
     }
 }
