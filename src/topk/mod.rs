@@ -209,8 +209,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     /// Notes that this method has no effect on the `k` of the counter.
     pub fn clear(&mut self) {
         self.monitored_list.clear();
-        self.alphas.clear();
-        self.alphas.resize(self.alphas.capacity(), 0);
+        self.alphas.iter_mut().for_each(|x| *x = 0);
         self.count = 0;
     }
 
