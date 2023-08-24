@@ -128,7 +128,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     ///
     /// Computes in **O(1)** time.
     pub fn get(&self, x: &T) -> Option<ElementCounter> {
-        self.monitored_list.get(x).map_or(None, |(_, v)| Some(v.0))
+        self.monitored_list.get(x).and_then(|(_, v)| Some(v.0))
     }
 
     /// Merges with `other` filtered space-saving approximation.
