@@ -124,7 +124,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     }
 
     /// Estimates the occurrences of the item `x` if the item is in the Top-K approximation.
-    /// Otherwise, `None` is returned
+    /// Otherwise, `None` is returned.
     ///
     /// Computes in **O(1)** time.
     pub fn get(&self, x: &T) -> Option<ElementCounter> {
@@ -225,7 +225,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         self.count
     }
 
-    /// Returns the `k` value configured for the FSS
+    /// Returns the `k` value of the counter.
     pub fn k(&self) -> usize {
         self.k
     }
