@@ -89,14 +89,14 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
             return;
         }
 
-        let x_hash = Self::alpha_hash(&x, self.alphas.len());
+        let x_hash = self.alpha_hash(&x);
         let (min_elem, min_counter) = self.monitored_list.peek().unwrap();
         if self.alphas[x_hash] + count < min_counter.0.estimated_count {
             self.alphas[x_hash] += count;
             return;
         }
 
-        let m_hash = Self::alpha_hash(min_elem, self.alphas.len());
+        let m_hash = self.alpha_hash(min_elem);
         self.alphas[m_hash] = min_counter.0.estimated_count;
 
         self.monitored_list.pop();
@@ -118,7 +118,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
             .get(x)
             .and_then(|(_, v)| Some(v.0))
             .unwrap_or_else(|| {
-                let count = self.alphas[Self::alpha_hash(&x, self.alphas.len())];
+                let count = self.alphas[self.alpha_hash(&x)];
                 ElementCounter::new(count, count)
             })
     }
@@ -153,7 +153,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
                 value.0.estimated_count += e.0.estimated_count;
                 value.0.associated_error += e.0.associated_error;
             } else {
-                let k_hash = Self::alpha_hash(key, other.alphas.len());
+                let k_hash = other.alpha_hash(key);
                 let a2 = other.alphas[k_hash];
                 value.0.estimated_count += a2;
                 value.0.associated_error += a2;
@@ -163,7 +163,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
             if self.monitored_list.get(key).is_some() {
                 continue;
             }
-            let k_hash = Self::alpha_hash(key, self.alphas.len());
+            let k_hash = self.alpha_hash(key);
             let a1 = self.alphas[k_hash];
             let e = Reverse(ElementCounter::new(value.0.estimated_count + a1, value.0.associated_error + a1));
             if self.monitored_list.peek().map_or(true, |(_, m)| m.0 < e.0) {
@@ -189,6 +189,15 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         }
         self.alphas.iter_mut().for_each(|x| *x = (*x as f64 * factor) as u64);
         self.count = (self.count as f64 * factor) as u64
+    }
+
+    /// Clears the counter, resetting count to 0.
+    ///
+    /// Note that this method has no effect on the `k` of the counter.
+    pub fn clear(&mut self) {
+        self.monitored_list.clear();
+        self.alphas.iter_mut().for_each(|x| *x = 0);
+        self.count = 0;
     }
 
     /// Returns an iterator in arbitrary order over the Top-K items.
@@ -230,22 +239,10 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
         self.k
     }
 
-    /// Clears the counter, resetting count to 0.
-    /// Notes that this method has no effect on the `k` of the counter.
-    pub fn clear(&mut self) {
-        self.monitored_list.clear();
-        self.alphas.iter_mut().for_each(|x| *x = 0);
-        self.count = 0;
-    }
-
-    fn reduce(x: u64, n: u64) -> usize {
-        (x as u128 * n as u128 >> 64) as usize
-    }
-
-    fn alpha_hash(x: &T, n: usize) -> usize {
+    fn alpha_hash(&self, x: &T) -> usize {
         let mut hasher = AHasher::default();
         x.hash(&mut hasher);
-        Self::reduce(hasher.finish(), n as u64)
+        (hasher.finish() as u128 * self.alphas.len() as u128 >> 64) as usize
     }
 }
 
