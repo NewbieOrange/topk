@@ -8,6 +8,8 @@ Version numbers follow the [semver](https://semver.org/) convention.
 ### Example
 
 ```rust
+use topk::FilteredSpaceSaving;
+
 let mut topk = FilteredSpaceSaving::new(3);
 topk.insert("1", 10);
 topk.insert("2", 20);
@@ -21,6 +23,8 @@ assert_eq!(topk_result[0].0, "2");
 merging space-saving results is supported:
 
 ```rust
+use topk::FilteredSpaceSaving;
+
 let mut fss1 = FilteredSpaceSaving::new(3);
 fss1.insert("1", 10);
 fss1.insert("2", 20);
