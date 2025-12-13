@@ -166,11 +166,20 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
             let k_hash = self.alpha_hash(key);
             let a1 = self.alphas[k_hash];
             let e = Reverse(ElementCounter::new(value.0.estimated_count + a1, value.0.associated_error + a1));
-            if self.monitored_list.peek().map_or(true, |(_, m)| m.0 < e.0) {
-                if self.monitored_list.len() >= self.k {
-                    self.monitored_list.pop();
-                }
+            if self.monitored_list.len() < self.k {
+                // We have fewer than k items, so add a new item.
                 self.monitored_list.push(key.clone(), e);
+            } else if self.monitored_list.peek().map_or(true, |(_, m)| m.0 < e.0) {
+                // We want to evict an item and replace it with this one, but we
+                // need to update the error accordingly.
+                let popped = self.monitored_list.pop().expect("monitored_list should not be empty");
+                let p_hash = self.alpha_hash(&popped.0);
+                self.alphas[p_hash] += popped.1.0.estimated_count;
+                self.monitored_list.push(key.clone(), e);
+            } else {
+                // This item is not in the Top-K and cannot replace any existing
+                // item, but we still need to track the error.
+                self.alphas[k_hash] = self.alphas[k_hash].max(e.0.estimated_count);
             }
         }
         for (i, v) in other.alphas.iter().enumerate() {
@@ -264,6 +273,9 @@ impl Display for InvalidMergeError {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
@@ -365,5 +377,151 @@ mod tests {
         fss.insert("c", 2);
         assert_eq!(fss.estimate(&"c").estimated_count(), 5);
         assert_eq!(topk_of(&fss), vec![("b", 10), ("a", 6), ("c", 5)]);
+    }
+
+    #[test]
+    fn test_merge_into_empty() {
+        let mut empty = FilteredSpaceSaving::new(100);
+        let mut other = FilteredSpaceSaving::new(100);
+
+        for i in 0..50 {
+            other.insert(i, (i % 10 + 1) as u64);
+        }
+
+        empty.merge(&other).unwrap();
+        assert_eq!(empty.iter().count(), 50);
+    }
+
+    #[test]
+    fn test_merge_underfull() {
+        let mut a = FilteredSpaceSaving::new(100);
+        let mut b = FilteredSpaceSaving::new(100);
+
+        for i in 0..30 { a.insert(i, 10); }
+        for i in 30..60 { b.insert(i, 5); }  // Lower counts than a's minimum
+
+        a.merge(&b).unwrap();
+        assert_eq!(a.iter().count(), 60);  // Should have all 60 items
+    }
+
+    // =======================================================================
+    // Property tests
+    //
+    // These tests generate hundreds of individual test cases, and check that
+    // certain algorithmic invariants hold. If a failure is found, proptest
+    // will try to "shrink" the failure to find a minimal example, which can
+    // then be added as a regular test case.
+    //
+    // These tests verify the Lemma 3 invariants from the original
+    // Space-Saving paper (Metwally et al., 2005).
+    //
+    // ### Lemma 3 Guarantees
+    //
+    // For any monitored element with true frequency `f` and estimated count
+    // `c` with error `ε`:
+    //
+    // - `0 ≤ ε ≤ min` (error bounded by minimum count in structure)
+    // - `f ≤ c ≤ f + min` (estimated count never underestimates)
+    //
+    // Testable properties:
+    //
+    // 1. `estimated_count >= exact_count` (never underestimates)
+    // 2. `estimated_count - associated_error <= exact_count` (error bound is
+    //     conservative)
+
+    /// Weighted key distribution approximating Zipf's law (common English
+    /// words)
+    fn weighted_key() -> impl Strategy<Value = &'static str> {
+        prop_oneof![
+            100 => Just("the"),
+            70 => Just("of"),
+            60 => Just("and"),
+            55 => Just("to"),
+            50 => Just("a"),
+            45 => Just("in"),
+            35 => Just("is"),
+            30 => Just("it"),
+            25 => Just("for"),
+            20 => Just("that"),
+        ]
+    }
+
+    /// (key, count) pair for insertion
+    fn weighted_insertion() -> impl Strategy<Value = (&'static str, u64)> {
+        (weighted_key(), 0u64..=5)
+    }
+
+    proptest! {
+        /// Verify Lemma 3 invariants hold after insert operations
+        #[test]
+        fn test_insert_lemma3_invariants(
+            k in 1usize..=12,
+            insertions in prop::collection::vec(weighted_insertion(), 0..25)
+        ) {
+            let mut fss = FilteredSpaceSaving::new(k);
+            let mut exact_counts: HashMap<&str, u64> = HashMap::new();
+
+            for (key, count) in insertions {
+                fss.insert(key, count);
+                *exact_counts.entry(key).or_default() += count;
+            }
+
+            // Check Lemma 3 for ALL items via estimate()
+            for (key, &exact) in &exact_counts {
+                let estimate = fss.estimate(key);
+                let estimated = estimate.estimated_count();
+                let error = estimate.associated_error();
+
+                // Invariant 1: Never underestimates
+                prop_assert!(estimated >= exact,
+                    "Underestimate: key={}, est={}, err={}, exact={} ", key, estimated, error, exact);
+
+                // Invariant 2: Error bound is conservative
+                // For evicted items (estimated == error): 0 <= exact (trivially true)
+                // For monitored items: meaningful bound
+                prop_assert!(estimated - error <= exact,
+                    "Error bound violated: key={}, est={}, err={}, exact={}",
+                    key, estimated, error, exact);
+            }
+        }
+
+        /// Verify Lemma 3 invariants hold after merge operations
+        #[test]
+        fn test_merge_lemma3_invariants(
+            k in 1usize..=12,
+            insertions_a in prop::collection::vec(weighted_insertion(), 0..25),
+            insertions_b in prop::collection::vec(weighted_insertion(), 0..25),
+        ) {
+            let mut fss_a = FilteredSpaceSaving::new(k);
+            let mut fss_b = FilteredSpaceSaving::new(k);
+            let mut exact_counts: HashMap<&str, u64> = HashMap::new();
+
+            for (key, count) in insertions_a {
+                fss_a.insert(key, count);
+                *exact_counts.entry(key).or_default() += count;
+            }
+            for (key, count) in insertions_b {
+                fss_b.insert(key, count);
+                *exact_counts.entry(key).or_default() += count;
+            }
+
+            fss_a.merge(&fss_b).unwrap();
+
+            // Check Lemma 3 for ALL items via estimate()
+            // This catches underfull merge bug: wrongly-dropped items
+            // will have estimate() return low alpha, failing estimated >= exact
+            for (key, &exact) in &exact_counts {
+                let estimate = fss_a.estimate(key);
+                let estimated = estimate.estimated_count();
+                let error = estimate.associated_error();
+
+                prop_assert!(estimated >= exact,
+                    "Merge underestimate: key={}, est={}, err={}, exact={}", key, estimated, error, exact);
+
+                prop_assert!(estimated - error <= exact,
+                    "Merge error bound violated: key={}, est={}, err={}, exact={}",
+                    key, estimated, error, exact);
+            }
+        }
     }
 }
