@@ -172,13 +172,22 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
             } else if self.monitored_list.peek().map_or(true, |(_, m)| m.0 < e.0) {
                 // We want to evict an item and replace it with this one, but we
                 // need to update the error accordingly.
+                //
+                // We use `max` here because the error for the popped key can't
+                // be any larger than `estimated_count`. But we _do_ need to
+                // update the `alphas` array because it may contain counted
+                // items that were counted purely in `monitored_list` and never
+                // in `alphas`.
                 let popped = self.monitored_list.pop().expect("monitored_list should not be empty");
                 let p_hash = self.alpha_hash(&popped.0);
-                self.alphas[p_hash] += popped.1.0.estimated_count;
+                self.alphas[p_hash] = self.alphas[p_hash].max(popped.1.0.estimated_count);
                 self.monitored_list.push(key.clone(), e);
             } else {
                 // This item is not in the Top-K and cannot replace any existing
                 // item, but we still need to track the error.
+                //
+                // We use `max` here because the worst possible error is the
+                // larger of the errors of the two inputs, not the sum.
                 self.alphas[k_hash] = self.alphas[k_hash].max(e.0.estimated_count);
             }
         }
