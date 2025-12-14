@@ -1,12 +1,28 @@
-use ahash::{AHasher, RandomState};
+#[cfg(not(feature = "serde"))]
+use ahash::AHasher;
+use ahash::RandomState;
+#[cfg(feature = "serde")]
+use rustc_stable_hash::StableSipHasher128;
 use priority_queue::PriorityQueue;
 use std::cmp::{Ordering, Reverse};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
+
+/// Default hasher for alpha buckets. Uses stable hash when serde is enabled
+/// for cross-platform compatibility; uses fast AHasher otherwise.
+#[cfg(feature = "serde")]
+pub type DefaultAlphaHasher = StableSipHasher128;
+
+/// Default hasher for alpha buckets. Uses stable hash when serde is enabled
+/// for cross-platform compatibility; uses fast AHasher otherwise.
+#[cfg(not(feature = "serde"))]
+pub type DefaultAlphaHasher = AHasher;
 
 /// A counter for element occurrences with associated error (if present).
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ElementCounter {
     estimated_count: u64,
     associated_error: u64,
@@ -53,25 +69,50 @@ const ALPHAS_FACTOR: usize = 6;
 ///
 /// The elements is of type T, which must implement `Eq` and `Hash`.
 ///
+/// The hasher H is used for the alpha bucket hash function. The default is
+/// `AHasher` for performance. When the `serde` feature is enabled, the default
+/// is `StableSipHasher128` for cross-platform determinism. This reduces
+/// performance of common operations by 20–25%.
+///
 /// The space-saving algorithm guarantees the following:
 /// 1. `estimated_count` >= `exact_count`
 /// 2. `estimated_count` - `associated_error` <= `exact_count`
 #[derive(Clone)]
-pub struct FilteredSpaceSaving<T: Eq + Hash> {
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct FilteredSpaceSaving<T: Eq + Hash, H: Hasher + Default = DefaultAlphaHasher> {
     k: usize,
     monitored_list: MonitoredList<T>,
     alphas: Vec<u64>,
     count: u64,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    _hasher: PhantomData<H>,
 }
 
-impl<T: Eq + Hash> FilteredSpaceSaving<T> {
+// `new` implicitly forces the use of DefaultAlphaHasher for convenience and
+// backwards compatibility.
+impl<T: Eq + Hash> FilteredSpaceSaving<T, DefaultAlphaHasher> {
     /// Creates an empty filtered space-saving structure with pre-allocated space for `k` elements.
+    ///
+    /// Uses `DefaultAlphaHasher` for alpha bucket hashing, which is `AHasher` by default
+    /// for performance, or `StableSipHasher128` when the `serde` feature is enabled for
+    /// cross-platform determinism.
     pub fn new(k: usize) -> Self {
+        Self::with_hasher(k)
+    }
+}
+
+// Other methods inherit their default from the `FilteredSpaceSaving` struct or
+// from context. We provide `with_hasher` to override the default hasher. This 
+// is the same pattern used by Rust's `HashMap`.
+impl<T: Eq + Hash, H: Hasher + Default> FilteredSpaceSaving<T, H> {
+    /// Creates an empty filtered space-saving structure with a custom hasher.
+    pub fn with_hasher(k: usize) -> Self {
         Self {
             k,
             monitored_list: MonitoredList::with_capacity_and_default_hasher(k),
             alphas: vec![0; ALPHAS_FACTOR * k],
             count: 0,
+            _hasher: PhantomData,
         }
     }
 
@@ -140,7 +181,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     /// ref: <https://ieeexplore.ieee.org/document/8438445>
     ///
     /// Computes in **O(k*log(k))** time.
-    pub fn merge(&mut self, other: &FilteredSpaceSaving<T>) -> Result<(), InvalidMergeError> where T: Clone {
+    pub fn merge(&mut self, other: &FilteredSpaceSaving<T, H>) -> Result<(), InvalidMergeError> where T: Clone {
         if self.k != other.k {
             return Err(InvalidMergeError {
                 expect: self.k,
@@ -258,7 +299,7 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T> {
     }
 
     fn alpha_hash(&self, x: &T) -> usize {
-        let mut hasher = AHasher::default();
+        let mut hasher = H::default();
         x.hash(&mut hasher);
         (hasher.finish() as u128 * self.alphas.len() as u128 >> 64) as usize
     }
@@ -529,6 +570,57 @@ mod tests {
 
                 prop_assert!(estimated - error <= exact,
                     "Merge error bound violated: key={}, est={}, err={}, exact={}",
+                    key, estimated, error, exact);
+            }
+        }
+
+        /// Verify Lemma 3 invariants hold after serde roundtrip
+        #[cfg(feature = "serde")]
+        #[test]
+        fn test_serde_roundtrip_and_lemma3_invariants(
+            k in 1usize..=12,
+            insertions in prop::collection::vec(weighted_insertion(), 0..25)
+        ) {
+            let mut fss = FilteredSpaceSaving::new(k);
+            let mut exact_counts: HashMap<&str, u64> = HashMap::new();
+
+            for (key, count) in insertions {
+                fss.insert(key, count);
+                *exact_counts.entry(key).or_default() += count;
+            }
+
+            // Serialize and deserialize
+            let serialized = serde_json::to_string(&fss).unwrap();
+            let deserialized: FilteredSpaceSaving<&str> = serde_json::from_str(&serialized).unwrap();
+
+            // Verify basic properties preserved
+            prop_assert_eq!(fss.count(), deserialized.count());
+            prop_assert_eq!(fss.k(), deserialized.k());
+
+            // Check Lemma 3 for ALL items via estimate() after roundtrip
+            for (key, &exact) in &exact_counts {
+                let orig = fss.estimate(key);
+                let restored = deserialized.estimate(key);
+
+                // Estimates should match exactly before and after
+                prop_assert_eq!(orig.estimated_count(), restored.estimated_count(),
+                    "Serde roundtrip changed estimate: key={}", key);
+                prop_assert_eq!(orig.associated_error(), restored.associated_error(),
+                    "Serde roundtrip changed error: key={}", key);
+
+                // Lemma 3 invariants should hold. This is almost certainly
+                // reundant with the insert tests, and exact dump/load tests
+                // above, but we write it out explicitly for documentation
+                // purposes, and to be extremely careful.
+                let estimated = restored.estimated_count();
+                let error = restored.associated_error();
+
+                prop_assert!(estimated >= exact,
+                    "Serde roundtrip underestimate: key={}, est={}, err={}, exact={}",
+                    key, estimated, error, exact);
+
+                prop_assert!(estimated - error <= exact,
+                    "Serde roundtrip error bound violated: key={}, est={}, err={}, exact={}",
                     key, estimated, error, exact);
             }
         }
