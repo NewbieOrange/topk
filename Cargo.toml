@@ -5,7 +5,7 @@ authors = ["NewbieOrange <yutiancheng1999@gmail.com>"]
 description = "TopK algorithm implementation in Rust"
 readme = "README.md"
 edition = "2021"
-rust-version = "1.57"
+rust-version = "1.65"
 repository = "https://github.com/NewbieOrange/topk"
 license = "MIT"
 keywords = ["topk", "space_saving"]
@@ -13,7 +13,7 @@ categories = ["algorithms", "data-structures"]
 
 [dependencies]
 ahash = "0.8"
-priority-queue = "1.4"
+priority-queue = "2.5.0"
 serde = { version = "1", features = ["derive"], optional = true }
 rustc-stable-hash = { version = "0.1", optional = true }
 
