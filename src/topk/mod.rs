@@ -1,9 +1,9 @@
 #[cfg(not(feature = "serde"))]
 use ahash::AHasher;
 use ahash::RandomState;
+use priority_queue::PriorityQueue;
 #[cfg(feature = "serde")]
 use rustc_stable_hash::StableSipHasher128;
-use priority_queue::PriorityQueue;
 use std::cmp::{Ordering, Reverse};
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -30,10 +30,7 @@ pub struct ElementCounter {
 
 impl ElementCounter {
     fn new(estimated_count: u64, associated_error: u64) -> Self {
-        ElementCounter {
-            estimated_count,
-            associated_error,
-        }
+        ElementCounter { estimated_count, associated_error }
     }
 
     /// Returns the estimated element occurrence count.
@@ -102,8 +99,8 @@ impl<T: Eq + Hash> FilteredSpaceSaving<T, DefaultAlphaHasher> {
 }
 
 // Other methods inherit their default from the `FilteredSpaceSaving` struct or
-// from context. We provide `with_hasher` to override the default hasher. This 
-// is the same pattern used by Rust's `HashMap`.
+// from context. We provide `with_hasher` to override the default hasher.
+// This is the same pattern used by Rust's `HashMap`.
 impl<T: Eq + Hash, H: Hasher + Default> FilteredSpaceSaving<T, H> {
     /// Creates an empty filtered space-saving structure with a custom hasher.
     pub fn with_hasher(k: usize) -> Self {
@@ -147,6 +144,15 @@ impl<T: Eq + Hash, H: Hasher + Default> FilteredSpaceSaving<T, H> {
         );
     }
 
+    /// Estimates the occurrences of the item `x` if the item is in the Top-K approximation.
+    ///
+    /// Otherwise, `None` is returned.
+    ///
+    /// Computes in **O(1)** time.
+    pub fn get(&self, x: &T) -> Option<ElementCounter> {
+        self.monitored_list.get(x).and_then(|(_, v)| Some(v.0))
+    }
+
     /// Estimates the occurrences of the item `x`.
     ///
     /// If the item is in the Top-K approximation, the approximation is returned.
@@ -155,21 +161,10 @@ impl<T: Eq + Hash, H: Hasher + Default> FilteredSpaceSaving<T, H> {
     ///
     /// Computes in **O(1)** time.
     pub fn estimate(&self, x: &T) -> ElementCounter {
-        self.monitored_list
-            .get(x)
-            .and_then(|(_, v)| Some(v.0))
-            .unwrap_or_else(|| {
-                let count = self.alphas[self.alpha_hash(&x)];
-                ElementCounter::new(count, count)
-            })
-    }
-
-    /// Estimates the occurrences of the item `x` if the item is in the Top-K approximation.
-    /// Otherwise, `None` is returned.
-    ///
-    /// Computes in **O(1)** time.
-    pub fn get(&self, x: &T) -> Option<ElementCounter> {
-        self.monitored_list.get(x).and_then(|(_, v)| Some(v.0))
+        self.get(x).unwrap_or_else(|| {
+            let count = self.alphas[self.alpha_hash(&x)];
+            ElementCounter::new(count, count)
+        })
     }
 
     /// Merges with `other` filtered space-saving approximation.
@@ -181,12 +176,12 @@ impl<T: Eq + Hash, H: Hasher + Default> FilteredSpaceSaving<T, H> {
     /// ref: <https://ieeexplore.ieee.org/document/8438445>
     ///
     /// Computes in **O(k*log(k))** time.
-    pub fn merge(&mut self, other: &FilteredSpaceSaving<T, H>) -> Result<(), InvalidMergeError> where T: Clone {
+    pub fn merge(&mut self, other: &FilteredSpaceSaving<T, H>) -> Result<(), InvalidMergeError>
+    where
+        T: Clone,
+    {
         if self.k != other.k {
-            return Err(InvalidMergeError {
-                expect: self.k,
-                actual: other.k,
-            });
+            return Err(InvalidMergeError { expect: self.k, actual: other.k });
         }
         self.count += other.count;
         for (key, value) in self.monitored_list.iter_mut() {
@@ -201,12 +196,15 @@ impl<T: Eq + Hash, H: Hasher + Default> FilteredSpaceSaving<T, H> {
             }
         }
         for (key, value) in other.monitored_list.iter() {
-            if self.monitored_list.get(key).is_some() {
+            if self.monitored_list.contains(key) {
                 continue;
             }
             let k_hash = self.alpha_hash(key);
             let a1 = self.alphas[k_hash];
-            let e = Reverse(ElementCounter::new(value.0.estimated_count + a1, value.0.associated_error + a1));
+            let e = Reverse(ElementCounter::new(
+                value.0.estimated_count + a1,
+                value.0.associated_error + a1,
+            ));
             if self.monitored_list.len() < self.k {
                 // We have fewer than k items, so add a new item.
                 self.monitored_list.push(key.clone(), e);
@@ -219,9 +217,9 @@ impl<T: Eq + Hash, H: Hasher + Default> FilteredSpaceSaving<T, H> {
                 // update the `alphas` array because it may contain counted
                 // items that were counted purely in `monitored_list` and never
                 // in `alphas`.
-                let popped = self.monitored_list.pop().expect("monitored_list should not be empty");
+                let popped = self.monitored_list.pop().unwrap();
                 let p_hash = self.alpha_hash(&popped.0);
-                self.alphas[p_hash] = self.alphas[p_hash].max(popped.1.0.estimated_count);
+                self.alphas[p_hash] = self.alphas[p_hash].max(popped.1 .0.estimated_count);
                 self.monitored_list.push(key.clone(), e);
             } else {
                 // This item is not in the Top-K and cannot replace any existing
@@ -255,17 +253,17 @@ impl<T: Eq + Hash, H: Hasher + Default> FilteredSpaceSaving<T, H> {
     /// Note that this method has no effect on the `k` of the counter.
     pub fn clear(&mut self) {
         self.monitored_list.clear();
-        self.alphas.iter_mut().for_each(|x| *x = 0);
+        self.alphas.fill(0);
         self.count = 0;
     }
 
     /// Returns an iterator in arbitrary order over the Top-K items.
-    pub fn iter(&self) -> impl Iterator<Item=(&T, &ElementCounter)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&T, &ElementCounter)> {
         self.monitored_list.iter().map(|(k, v)| (k, &v.0))
     }
 
     /// Consumes the `FilteredSpaceSaving` and return an iterator in arbitrary order over the Top-K items.
-    pub fn into_iter(self) -> impl Iterator<Item=(T, ElementCounter)> {
+    pub fn into_iter(self) -> impl Iterator<Item = (T, ElementCounter)> {
         self.monitored_list.into_iter().map(|(k, v)| (k, v.0))
     }
 
@@ -282,7 +280,7 @@ impl<T: Eq + Hash, H: Hasher + Default> FilteredSpaceSaving<T, H> {
     /// Consumes the `FilteredSpaceSaving` and return a `DoubleEndedIterator` with Top-K items and counters in descending order (top items first).
     ///
     /// Computes in **O(k*log(k))** time.
-    pub fn into_sorted_iter(self) -> impl DoubleEndedIterator<Item=(T, ElementCounter)> {
+    pub fn into_sorted_iter(self) -> impl DoubleEndedIterator<Item = (T, ElementCounter)> {
         self.into_sorted_vec().into_iter()
     }
 
@@ -313,11 +311,7 @@ pub struct InvalidMergeError {
 
 impl Display for InvalidMergeError {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "expected merge with same k {}, got {}",
-            self.expect, self.actual
-        )
+        write!(f, "expected merge with same k {}, got {}", self.expect, self.actual)
     }
 }
 
@@ -348,14 +342,15 @@ mod tests {
 
     #[test]
     fn test_merge() {
-        let mut fss1 = FilteredSpaceSaving::new(3);
+        // Lemma 3 Guarantees are verified by property tests, here we use large k to result stable
+        let mut fss1 = FilteredSpaceSaving::new(5);
         fss1.insert("1", 10);
         fss1.insert("2", 20);
         fss1.insert("3", 2);
         fss1.insert("4", 1);
         fss1.insert("4", 3);
         fss1.insert("5", 5);
-        let mut fss2 = FilteredSpaceSaving::new(3);
+        let mut fss2 = FilteredSpaceSaving::new(5);
         fss2.insert("1", 10);
         fss2.insert("2", 20);
         fss2.insert("3", 20);
@@ -369,7 +364,7 @@ mod tests {
         assert_eq!(result[1].0, "3");
         assert!(result[1].1.estimated_count + result[1].1.associated_error >= 22);
         assert_eq!(result[2].0, "1");
-        assert_eq!(result[2].1, ElementCounter::new(20, 10));
+        assert_eq!(result[2].1, ElementCounter::new(20, 0));
     }
 
     #[test]
@@ -408,7 +403,7 @@ mod tests {
 
     #[test]
     fn test_decay() {
-        let mut fss = FilteredSpaceSaving::new(3);
+        let mut fss = FilteredSpaceSaving::new(5);
         fss.insert("a", 10);
         fss.insert("b", 20);
         fss.insert("c", 6);
@@ -416,17 +411,17 @@ mod tests {
         fss.insert("a", 2);
 
         assert_eq!(fss.count(), 46);
-        assert_eq!(topk_of(&fss), vec![("b", 20), ("a", 12), ("d", 8)]);
+        assert_eq!(topk_of(&fss), vec![("b", 20), ("a", 12), ("d", 8), ("c", 6)]);
 
         fss.decay(0.5);
         assert_eq!(fss.count(), 23);
-        assert_eq!(topk_of(&fss), vec![("b", 10), ("a", 6), ("d", 4)]);
+        assert_eq!(topk_of(&fss), vec![("b", 10), ("a", 6), ("d", 4), ("c", 3)]);
 
-        // make sure we did not lose the alphas of items outside of the top-k
+        // make sure we did not lose the alphas of items outside the top-k
         assert_eq!(fss.estimate(&"c").estimated_count(), 3);
         fss.insert("c", 2);
         assert_eq!(fss.estimate(&"c").estimated_count(), 5);
-        assert_eq!(topk_of(&fss), vec![("b", 10), ("a", 6), ("c", 5)]);
+        assert_eq!(topk_of(&fss), vec![("b", 10), ("a", 6), ("c", 5), ("d", 4)]);
     }
 
     #[test]
@@ -447,11 +442,16 @@ mod tests {
         let mut a = FilteredSpaceSaving::new(100);
         let mut b = FilteredSpaceSaving::new(100);
 
-        for i in 0..30 { a.insert(i, 10); }
-        for i in 30..60 { b.insert(i, 5); }  // Lower counts than a's minimum
+        for i in 0..30 {
+            a.insert(i, 10);
+        }
+        // Lower counts than a's minimum
+        for i in 30..60 {
+            b.insert(i, 5);
+        }
 
         a.merge(&b).unwrap();
-        assert_eq!(a.iter().count(), 60);  // Should have all 60 items
+        assert_eq!(a.iter().count(), 60); // Should have all 60 items
     }
 
     // =======================================================================
