@@ -342,7 +342,8 @@ mod tests {
 
     #[test]
     fn test_merge() {
-        // Lemma 3 Guarantees are verified by property tests, here we use large k to result stable
+        // Lemma 3 Guarantees are verified by property tests
+        // here we use large k to have stable result
         let mut fss1 = FilteredSpaceSaving::new(5);
         fss1.insert("1", 10);
         fss1.insert("2", 20);
